@@ -8,7 +8,7 @@ const title = document.getElementById("title");
 const translations = {
   uz: {
     file: "pdfs/book-uz.pdf",
-    title: "Jizzax mo'jizalar o'lkasi",
+    title: "Jizzax mo‘jizalar o‘lkasi",
   },
   ru: {
     file: "pdfs/book-ru.pdf",
@@ -24,61 +24,71 @@ let pdfDoc = null;
 let currentPage = 1;
 let isLoading = false;
 let totalPages = 0;
-let currentLang = "uz";
 
 function loadPDF(langCode) {
-  currentLang = langCode;
-  title.textContent = translations[langCode].title;
-  viewer.innerHTML = ""; // tozalash
+  const data = translations[langCode];
+  title.textContent = data.title;
+  viewer.innerHTML = "";
   currentPage = 1;
   isLoading = false;
-  pdfjsLib.getDocument(translations[langCode].file).promise.then((pdf) => {
+  loading.textContent = "Yuklanmoqda...";
+  loading.style.display = "block";
+
+  pdfjsLib.getDocument(data.file).promise.then((pdf) => {
     pdfDoc = pdf;
     totalPages = pdf.numPages;
-    loadNextPage();
+    renderNextPage();
   });
 }
 
-function loadNextPage() {
+function renderNextPage() {
   if (isLoading || currentPage > totalPages) return;
+
   isLoading = true;
   loading.style.display = "block";
 
   pdfDoc.getPage(currentPage).then((page) => {
     const viewport = page.getViewport({ scale: 1.5 });
     const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d");
 
-    canvas.height = viewport.height;
     canvas.width = viewport.width;
+    canvas.height = viewport.height;
 
-    const renderContext = {
-      canvasContext: context,
-      viewport: viewport,
-    };
+    page
+      .render({
+        canvasContext: ctx,
+        viewport: viewport,
+      })
+      .promise.then(() => {
+        viewer.appendChild(canvas);
+        currentPage++;
+        isLoading = false;
 
-    page.render(renderContext).promise.then(() => {
-      viewer.appendChild(canvas);
-      currentPage++;
-      isLoading = false;
-      loading.style.display = "none";
-    });
+        if (currentPage > totalPages) {
+          loading.textContent = "Barchasi yuklandi ✅";
+        }
+      });
   });
 }
 
-// Scroll event orqali yuklab ketish
-window.addEventListener("scroll", () => {
-  const scrollY = window.scrollY + window.innerHeight;
-  const documentHeight = document.body.offsetHeight;
-  if (scrollY + 100 >= documentHeight) {
-    loadNextPage();
-  }
+// ✅ IntersectionObserver bilan yuklash
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (entry.isIntersecting && !isLoading) {
+      renderNextPage();
+    }
+  });
 });
 
-// Til o‘zgarsa — qaytadan yuklash
+observer.observe(loading);
+
+// Til tanlanganda
 languageSelect.addEventListener("change", () => {
+  observer.unobserve(loading); // qayta observerni yangilaymiz
   loadPDF(languageSelect.value);
+  observer.observe(loading);
 });
 
-// Boshlanishida yuklash
+// Boshlanishida
 loadPDF("uz");
