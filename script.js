@@ -22,8 +22,12 @@ const translations = {
 
 let pdfDoc = null;
 let currentPage = 1;
-let isLoading = false;
 let totalPages = 0;
+let isLoading = false;
+
+function isMobile() {
+  return window.innerWidth <= 768;
+}
 
 function loadPDF(langCode) {
   const data = translations[langCode];
@@ -37,58 +41,83 @@ function loadPDF(langCode) {
   pdfjsLib.getDocument(data.file).promise.then((pdf) => {
     pdfDoc = pdf;
     totalPages = pdf.numPages;
-    renderNextPage();
+    renderMultiplePages(3); // start with first 3 pages
   });
 }
 
-function renderNextPage() {
+function renderMultiplePages(count = 2) {
   if (isLoading || currentPage > totalPages) return;
 
   isLoading = true;
   loading.style.display = "block";
 
-  pdfDoc.getPage(currentPage).then((page) => {
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
+  let pagesRendered = 0;
 
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+  for (let i = 0; i < count && currentPage <= totalPages; i++, currentPage++) {
+    pdfDoc.getPage(currentPage).then((page) => {
+      const viewport = page.getViewport({ scale: isMobile() ? 0.8 : 1.2 });
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
 
-    page
-      .render({
-        canvasContext: ctx,
-        viewport: viewport,
-      })
-      .promise.then(() => {
-        viewer.appendChild(canvas);
-        currentPage++;
-        isLoading = false;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
 
-        if (currentPage > totalPages) {
-          loading.textContent = "Barchasi yuklandi ✅";
-        }
-      });
+      page
+        .render({
+          canvasContext: ctx,
+          viewport: viewport,
+        })
+        .promise.then(() => {
+          // Convert canvas to <img> for memory efficiency
+          const img = document.createElement("img");
+          img.src = canvas.toDataURL("image/webp");
+          img.style.width = "100%";
+          viewer.appendChild(img);
+          canvas.remove(); // free memory
+
+          pagesRendered++;
+
+          if (pagesRendered === count || currentPage > totalPages) {
+            isLoading = false;
+            if (currentPage > totalPages) {
+              loading.textContent = "Barchasi yuklandi ✅";
+            }
+          }
+        });
+    });
+  }
+}
+
+// IntersectionObserver for infinite scroll
+if ("IntersectionObserver" in window) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting && !isLoading) {
+        renderMultiplePages(2);
+      }
+    });
+  });
+
+  observer.observe(loading);
+
+  languageSelect.addEventListener("change", () => {
+    observer.unobserve(loading);
+    loadPDF(languageSelect.value);
+    observer.observe(loading);
+  });
+} else {
+  // Fallback for old mobile browsers
+  window.addEventListener("scroll", () => {
+    const rect = loading.getBoundingClientRect();
+    if (rect.top < window.innerHeight && !isLoading) {
+      renderMultiplePages(2);
+    }
+  });
+
+  languageSelect.addEventListener("change", () => {
+    loadPDF(languageSelect.value);
   });
 }
 
-// ✅ IntersectionObserver bilan yuklash
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach((entry) => {
-    if (entry.isIntersecting && !isLoading) {
-      renderNextPage();
-    }
-  });
-});
-
-observer.observe(loading);
-
-// Til tanlanganda
-languageSelect.addEventListener("change", () => {
-  observer.unobserve(loading); // qayta observerni yangilaymiz
-  loadPDF(languageSelect.value);
-  observer.observe(loading);
-});
-
-// Boshlanishida
+// Initial load
 loadPDF("uz");
